@@ -1,9 +1,14 @@
 import email
 from email.message import EmailMessage
 import imp
+from itertools import product
+from operator import index
 from django.shortcuts import redirect, render
+from carts.models import Cart, CartItem 
+from carts.views import _cart_id
 
 import accounts
+from store.models import Variation
 from .models import Account
 from django.contrib import messages, auth
 from django.contrib.auth.decorators import login_required
@@ -16,6 +21,8 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import EmailMessage
+# Dynami Show next page to user
+import requests
 
 # Create your views here.
 
@@ -71,9 +78,60 @@ def login(request): # Check Loin function later
         user = auth.authenticate(email=email, password=password) # It will authenticate and return user as object
 
         if user is not None:
+            try: # Here we will if check if there is any cart item
+                cart = Cart.objects.get(cart_id=_cart_id(request)) # To fetch the cart id from the browser(session key of cart product)
+                is_cart_item_exists = CartItem.objects.filter(cart=cart).exists() # we dont need product noe, we are just assigning cart item to user, Chechk cart item exists or not (Bolean)
+                
+                if is_cart_item_exists:
+                    cart_item = CartItem.objects.filter(cart=cart) # This will all the cart item assigned to user id
+
+                    # Getting the pruduct variation by cart id.
+                    product_variation = []
+                    for item in cart_item:
+                        variation = item.variations.all()
+                        product_variation.append(list(variation))
+
+                    # Get the cart items from the user to access his product variation
+                    cart_item = CartItem.objects.filter(user=user) # This will return cart item objects
+                    # Checking Variations inside the existing variation, So we can increase the quantity of cart item.
+                    ex_var_list = [] # Existing VAriation List from the Database 
+                    id = [] # id of that particular cart item 
+                    for item in cart_item:
+                        existing_variation = item.variations.all()
+                        ex_var_list.append(list(existing_variation))
+                        id.append(item.id) # add item id inside the id list
+
+                    # Get the comon product variation between product_variation and ex_var_list
+                    for pr in product_variation:
+                        if pr in ex_var_list:
+                            index = ex_var_list.index(pr) # index will give us the position where we found the common item
+                            item_id = id[index] # id of above common item.
+                            item = CartItem.objects.get(id=item_id)
+                            item.quantity += 1
+                            item.user = user # assign current user to this cart item
+                            item.save()
+                        else:
+                            cart_item = CartItem.objects.filter(cart=cart) 
+                            for item in cart_item: # assigning user to the cart item
+                                item.user = user
+                                item.save()
+
+            except:
+                pass
+
             auth.login(request, user)
             messages.success(request, "You are now logged in!") 
-            return redirect('dashboard')
+            url = request.META.get('HTTP_REFERER')# It will grab the previous url where you came
+            try:
+                query = requests.utils.urlparse(url).query
+                # We will take query as 'next=/cart/checkout/
+                # we will take query and split it from '='
+                params = dict(x.split('=') for x in query.split('&')) # It will take split as dict and make next as key and cart/chechout as value
+                if 'next' in params:
+                    nextPage = params['next']
+                    return redirect(nextPage)
+            except:
+                return redirect('dashboard')
         else:
             messages.error(request, "Invalid login credentials") # Erroe Message
             return redirect('login')
