@@ -1,5 +1,3 @@
-import email
-from turtle import Turtle
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 
@@ -65,6 +63,10 @@ class Account(AbstractBaseUser):
     REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
 
     objects = MyAccountManager()
+
+    # Full name to print in review
+    def full_name(self):
+        return f'{self.first_name} {self.last_name}'
 
     # To retrun email in Template
 
